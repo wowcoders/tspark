@@ -59,6 +59,7 @@ public class Server {
 	}
 
 	public static void main(String []args) throws Exception {
+		org.wowcoders.beringeiclient.configurations.Configuration.init(null);
 		Configuration.init(null);
 		
 		@SuppressWarnings("unused")
