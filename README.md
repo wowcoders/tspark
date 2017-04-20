@@ -1,7 +1,7 @@
 # tspark
 TimeSeries Java client for Facebook Beringei. It also includes query service with tags support for metrics.
 
-## Prerequisites - Download and deploy the beriengi server from facebook
+## Prerequisites - Download and deploy the beringei server from facebook
 	https://github.com/facebookincubator/beringei
 
 ## Start the Beringei Server
