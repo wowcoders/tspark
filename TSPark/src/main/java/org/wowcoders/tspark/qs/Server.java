@@ -1,5 +1,15 @@
 package org.wowcoders.tspark.qs;
 
+import java.io.FileInputStream;
+import java.text.ParseException;
+import java.util.Properties;
+
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.PosixParser;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.nio.*;
 import org.eclipse.jetty.servlet.FilterHolder;
@@ -59,8 +69,39 @@ public class Server {
 	}
 
 	public static void main(String []args) throws Exception {
+		
+		String configFileName = "/tspark-demo.properties";
+		Options options = new Options();
+		Option optThreads = new Option("c", "config-file", true, "a config file with config value.");
+		options.addOption(optThreads);
+
+		CommandLineParser parser = new PosixParser();
+		HelpFormatter formatter = new HelpFormatter();
+		CommandLine cmd = null;
+		try {
+			cmd = parser.parse(options, args);
+		} catch (org.apache.commons.cli.ParseException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+			formatter.printHelp("Server", options);
+		}
+
+		String _propertyFile = cmd.getOptionValue("c");
+
+		if (_propertyFile != null) {
+			configFileName = _propertyFile;
+		}
+
+		Properties props = new Properties();
+		try {            
+			props.load(new FileInputStream(configFileName));   
+		} catch(Exception e) {
+			//slf4jLogger.error("default.properies/property file not provided");
+			System.exit(0);
+		}
+		
 		org.wowcoders.beringeiclient.configurations.Configuration.init(null);
-		Configuration.init(null);
+		Configuration.init(configFileName);
 		
 		@SuppressWarnings("unused")
 		Configuration cfg = Configuration.getInstnace();
