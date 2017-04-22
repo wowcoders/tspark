@@ -6,6 +6,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.PosixParser;
 import org.wowcoders.beringeiclient.configurations.Configuration;
 
 import com.facebook.beringei.thriftclient.DataPoint;
@@ -23,6 +29,32 @@ public class BeringeiTestClient {
 	static BeringeiClient client = null;
 
 	public static void main(String [] args) throws InterruptedException {
+		
+		// Command line options to set the config file.
+		String configFileName = "/beringeiclient-demo.properties";
+		Options options = new Options();
+		Option optThreads = new Option("c", "config-file", true, "a config file with config value.");
+		options.addOption(optThreads);
+
+		CommandLineParser parser = new PosixParser();
+		HelpFormatter formatter = new HelpFormatter();
+		CommandLine cmd = null;
+		try {
+			cmd = parser.parse(options, args);
+		} catch (org.apache.commons.cli.ParseException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+			formatter.printHelp("Server", options);
+		}
+
+		String _propertyFile = cmd.getOptionValue("c");
+
+		if (_propertyFile != null) {
+			configFileName = _propertyFile;
+		}
+		
+		// Initialize the Client Configuration
+		Configuration.init(configFileName);
 		Configuration.loadConfig();
 		try {
 			client = new BeringeiClient();
