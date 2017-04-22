@@ -92,15 +92,7 @@ public class Server {
 			configFileName = _propertyFile;
 		}
 
-		Properties props = new Properties();
-		try {            
-			props.load(new FileInputStream(configFileName));   
-		} catch(Exception e) {
-			//slf4jLogger.error("default.properies/property file not provided");
-			System.exit(0);
-		}
-		
-		org.wowcoders.beringeiclient.configurations.Configuration.init(null);
+		org.wowcoders.beringeiclient.configurations.Configuration.init(configFileName);
 		Configuration.init(configFileName);
 		
 		@SuppressWarnings("unused")
