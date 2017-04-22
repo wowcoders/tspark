@@ -70,7 +70,7 @@ public class Server {
 
 	public static void main(String []args) throws Exception {
 		
-		String configFileName = "/tspark-demo.properties";
+		String configFileName = null;
 		Options options = new Options();
 		Option optThreads = new Option("c", "config-file", true, "a config file with config value.");
 		options.addOption(optThreads);
@@ -91,7 +91,7 @@ public class Server {
 		if (_propertyFile != null) {
 			configFileName = _propertyFile;
 		}
-
+		
 		org.wowcoders.beringeiclient.configurations.Configuration.init(configFileName);
 		Configuration.init(configFileName);
 		

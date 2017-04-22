@@ -9,7 +9,7 @@ TimeSeries Java client for Facebook Beringei. It also includes query service wit
 
 ## Building the Beringei Java Client
 	mvn clean package
-	dependencies com.facebook thrift-1.0-SNAPSHOT
+	mvn clean package assembly:single (fat jar)
 
 ## Samples
     Send & Retrieve metrics data using Java Client
