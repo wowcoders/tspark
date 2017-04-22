@@ -1,5 +1,6 @@
 package org.wowcoders.beringeiclient;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -13,74 +14,74 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.facebook.thrift.TException;
-import com.facebook.thrift.protocol.TCompactProtocol;
-import com.facebook.thrift.protocol.TProtocol;
-import com.facebook.thrift.transport.TFramedTransport;
-import com.facebook.thrift.transport.TSocket;
-import com.facebook.thrift.transport.TTransport;
-import com.facebook.thrift.transport.TTransportException;
-
-import cn.danielw.fop.ObjectFactory;
-import cn.danielw.fop.ObjectPool;
-import cn.danielw.fop.PoolConfig;
-import cn.danielw.fop.Poolable;
-
 import org.wowcoders.beringei.compression.BlockDecoder;
 import org.wowcoders.beringeiclient.configurations.Configuration;
 import org.wowcoders.beringeiclient.utils.Pair;
 
-import com.facebook.beringei.thriftclient.BeringeiService.Client;
 import com.facebook.beringei.thriftclient.DataPoint;
 import com.facebook.beringei.thriftclient.GetDataRequest;
 import com.facebook.beringei.thriftclient.GetDataResult;
 import com.facebook.beringei.thriftclient.Key;
 import com.facebook.beringei.thriftclient.PutDataRequest;
 import com.facebook.beringei.thriftclient.PutDataResult;
+import com.facebook.beringei.thriftclient.StatusCode;
 import com.facebook.beringei.thriftclient.TimeSeriesBlock;
 import com.facebook.beringei.thriftclient.TimeSeriesData;
 import com.facebook.beringei.thriftclient.TimeValuePair;
+import com.facebook.beringei.thriftclient.BeringeiService.Client;
+
+import org.apache.thrift.TException;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.transport.TFramedTransport;
+import org.apache.thrift.transport.TSocket;
+
+import cn.danielw.fop.ObjectFactory;
+import cn.danielw.fop.ObjectPool;
+import cn.danielw.fop.PoolConfig;
+import cn.danielw.fop.Poolable;
+
 
 public class BeringeiClient {
 	final static Logger logger = LoggerFactory.getLogger(BeringeiClient.class);
-	
+
 	static int shardCount = 100;
-	
+
 	static int flushAfterCount = 1000;
 	static int flushInterval = 10000;
 
 	static int executerReaderThreads = 20; 
 	static int executerWriterThreads = 10;
-	
+
 	static ExecutorService executorReader = Executors.newFixedThreadPool(executerReaderThreads);
 	static ExecutorService executorWriter = Executors.newFixedThreadPool(executerWriterThreads);
 
+	//Map<Long, List<Client>> clusterByShards = new ConcurrentHashMap<Long, List<Client>>();
+	//Map<Long, List<DataPoint>> batchByShards = new ConcurrentHashMap<Long, List<DataPoint>>();
 	Map<Long, List<ObjectPool<Client>>> clusterByShards = new ConcurrentHashMap<Long, List<ObjectPool<Client>>>();
 	Map<Long, List<DataPoint>> batchByShards = new ConcurrentHashMap<Long, List<DataPoint>>();
-
+	
 	private ObjectFactory<Client> createObjectFactory(Pair<String, Integer> addr) {
 		ObjectFactory<Client> factory = new ObjectFactory<Client>() {
 			@Override public Client create() {
 				Configuration cfg = Configuration.getInstnace();
-				
-				TTransport transport;
+
 				TSocket socket = new TSocket(addr.first, addr.second);
-				
-				//TODO does TSocket allows seperate timeouts for connect/write/read?
+
 				socket.setTimeout((int)(cfg.getClientConfig().getConnectTimeout() 
 						+ cfg.getClientConfig().getWriteTimeout()
 						+ cfg.getClientConfig().getReadTimeout()));
 				
-				transport = new TFramedTransport(socket);
+
 				try {
-					transport.open();
+					socket.open();
 				} catch (TTransportException e) {
 					e.printStackTrace();
 				}
-				TProtocol protocol = new TCompactProtocol(transport);
+				TProtocol protocol = new TBinaryProtocol(new TFramedTransport(socket));
 				Client client = new Client(protocol);
 				return client;
 			}
@@ -99,25 +100,26 @@ public class BeringeiClient {
 
 		return factory;
 	}
+	
 	@SuppressWarnings("serial")
-	public BeringeiClient() {
+	public BeringeiClient() throws IOException {
 		Configuration cfg = Configuration.getInstnace();
-		
+
 		shardCount = cfg.getClientConfig().getShardCounts();
-		
+
 		flushAfterCount = cfg.getClientConfig().getFlushAfterCount();
 		flushInterval = cfg.getClientConfig().getFlushInterval();
 
 		//TODO need review around how we creates pools for async vs threads
 		executerReaderThreads = cfg.getClientConfig().getReadThreads(); 
 		executerWriterThreads = cfg.getClientConfig().getWriteThreads();
-		
+
 		PoolConfig config = new PoolConfig();
 		config.setPartitionSize(5);
 		config.setMaxSize(executerReaderThreads + executerWriterThreads);
 		config.setMinSize(cfg.getClientConfig().getIdleConnectionsPerShards());
 		config.setMaxIdleMilliseconds((int)cfg.getClientConfig().getTimeoutToCloseIdleConnection());
-		
+
 		//TODO 1. Multidatacenter support,
 		//2. refresh the map if it is configured using admin ui.
 		//3. event endpoints as backup/can all beringei nodes supports read of key with any shardid?
@@ -125,10 +127,10 @@ public class BeringeiClient {
 		String [] datacenters = cfg.getClientConfig().getDatacenters();
 		String datacenter = datacenters[0];
 		HashSet<Pair<String, Integer>> hostSets =  cfg.getClientConfig().getDatacenterHostListMap().get(datacenter);
-		
+
 		int hostCount = hostSets.size();
 		int shardsPerHost = shardCount/hostCount;
-		
+
 		Iterator<Pair<String, Integer>> it = hostSets.iterator();
 		int startShard = 0;
 		// System.out.println(hostCount + ":" + shardCount + ":" +  shardsPerHost);
@@ -205,7 +207,8 @@ public class BeringeiClient {
 			flush();
 		}
 	}
-
+	
+	
 	public CompletableFuture<List <DataPoint>> putDataPoints(List <DataPoint> dps) {
 		CompletableFuture<List <DataPoint>> completableFuture =  new CompletableFuture<List <DataPoint>>();
 		executorWriter.submit(() -> {
@@ -264,6 +267,7 @@ public class BeringeiClient {
 		return completableFuture;
 	}
 
+
 	public CompletableFuture<Map<Key, List <DataPoint>>> getDataPoints(long start, long end, List <Key> keys) {
 		CompletableFuture<Map<Key, List <DataPoint>>> completableFuture =  new CompletableFuture<Map<Key, List <DataPoint>>>();
 		executorReader.submit(() -> {
@@ -296,7 +300,7 @@ public class BeringeiClient {
 					int idx = 0;
 					for(TimeSeriesData ts: lts) {
 						Key key = keys.get(idx);
-						if (ts.status == 0) {
+						if (ts.status == StatusCode.OK) {
 							List<TimeSeriesBlock> ltsb = ts.getData();
 							List <DataPoint> dps  = new ArrayList<DataPoint>();
 							for(TimeSeriesBlock tsb: ltsb) {
@@ -363,7 +367,7 @@ public class BeringeiClient {
 					int idx = 0;
 					for(TimeSeriesData ts: lts) {
 						Key key = keys.get(idx);
-						if (ts.status == 0) {
+						if (ts.status == StatusCode.OK) {
 							List<TimeSeriesBlock> ltsb = ts.getData();
 							List <DataPoint> dps  = new ArrayList<DataPoint>();
 							for(TimeSeriesBlock tsb: ltsb) {

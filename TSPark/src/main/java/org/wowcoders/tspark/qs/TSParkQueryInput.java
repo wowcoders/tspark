@@ -9,14 +9,14 @@ import org.wowcoders.tspark.utils.Pair;
 
 import com.facebook.beringei.thriftclient.Key;
 
-public class BeringeiWrappedQuery {
+public class TSParkQueryInput {
 		Key key;
 		Topo topoActual;
 		Aggregators agg;
 		TSKey topoQuery;
 		Topo groupBy = null;
 
-		BeringeiWrappedQuery(Key key, Topo topoActual, Aggregators agg, TSKey topoQuery) {
+		TSParkQueryInput(Key key, Topo topoActual, Aggregators agg, TSKey topoQuery) {
 			this.key = key;
 			this.topoActual = topoActual;
 			this.agg = agg;

@@ -174,10 +174,10 @@ public class GrafanaTSDB2RequestHandler {
 					logger.info("====ts access input end====");
 				}
 
-				List<CompletableFuture<List<BeringeiQSResponse>>> cfs = new ArrayList<CompletableFuture<List<BeringeiQSResponse>>>();
+				List<CompletableFuture<List<TSParkQSResponse>>> cfs = new ArrayList<CompletableFuture<List<TSParkQSResponse>>>();
 
 				for(TSKey _tsKey: tsArr) {
-					CompletableFuture<List<BeringeiQSResponse>> cf = taggedTS.getData(q.getStart()/1000, end/1000, _tsKey);
+					CompletableFuture<List<TSParkQSResponse>> cf = taggedTS.getData(q.getStart()/1000, end/1000, _tsKey);
 					cfs.add(cf);
 				}
 
@@ -188,7 +188,7 @@ public class GrafanaTSDB2RequestHandler {
 
 				CompletableFuture.allOf(cfs.toArray(new CompletableFuture[cfs.size()])).thenAccept(x -> {
 					cfs.stream().forEach(metric -> {
-						List<BeringeiQSResponse> series = metric.join();
+						List<TSParkQSResponse> series = metric.join();
 						series.stream().forEach(dps-> {
 							TSKey tsKey = dps.getMeta();
 							StringBuilder sb = new StringBuilder();

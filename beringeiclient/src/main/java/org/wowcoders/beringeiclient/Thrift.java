@@ -1,13 +1,13 @@
 package org.wowcoders.beringeiclient;
 
-import com.facebook.thrift.async.TAsyncClientManager;
-import com.facebook.thrift.protocol.TBinaryProtocol;
-import com.facebook.thrift.protocol.TProtocol;
-import com.facebook.thrift.protocol.TProtocolFactory;
-import com.facebook.thrift.transport.TFramedTransport;
-import com.facebook.thrift.transport.TNonblockingSocket;
-import com.facebook.thrift.transport.TTransport;
-import com.facebook.thrift.transport.TTransportException;
+import org.apache.thrift.async.TAsyncClientManager;
+import org.apache.thrift.protocol.TBinaryProtocol;
+import org.apache.thrift.protocol.TProtocol;
+import org.apache.thrift.protocol.TProtocolFactory;
+import org.apache.thrift.transport.TFramedTransport;
+import org.apache.thrift.transport.TNonblockingSocket;
+import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
 
 import com.facebook.beringei.thriftclient.BeringeiService.AsyncClient;
 import com.facebook.beringei.thriftclient.BeringeiService.AsyncClient.Factory;

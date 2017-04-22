@@ -95,18 +95,18 @@ public class TaggedTS {
 		return cfs;
 	}
 
-	public CompletableFuture <List<BeringeiQSResponse>> rollUpAggregation(List<DataPoint> result, Map<String, BeringeiWrappedQuery> inputMap) {
+	public CompletableFuture <List<TSParkQSResponse>> rollUpAggregation(List<DataPoint> result, Map<String, TSParkQueryInput> inputMap) {
 		// ExecutorService pool = Executors.newFixedThreadPool(2);
-		CompletableFuture<List<BeringeiQSResponse>> cfs = new CompletableFuture<List<BeringeiQSResponse>>();
+		CompletableFuture<List<TSParkQSResponse>> cfs = new CompletableFuture<List<TSParkQSResponse>>();
 
 		long _start = TimeUnit.NANOSECONDS.toMicros(System.nanoTime());
 
 		if (result != null) {
-			List<BeringeiQSResponse> resp = new ArrayList<BeringeiQSResponse>();
+			List<TSParkQSResponse> resp = new ArrayList<TSParkQSResponse>();
 			Map<String, List<DataPoint>> grpByTopo = result.stream().collect(
 					Collectors.groupingBy(dp-> {
 						String _key = dp.key.key;
-						BeringeiWrappedQuery q = inputMap.get(_key);
+						TSParkQueryInput q = inputMap.get(_key);
 
 						String filter = q.getGroupBy()._hash();
 						return filter;
@@ -116,7 +116,7 @@ public class TaggedTS {
 				List<DataPoint> _dps = e.getValue();
 				if (_dps.size() > 0) {
 					String _key = _dps.get(0).getKey().getKey();
-					BeringeiWrappedQuery q = inputMap.get(_key);
+					TSParkQueryInput q = inputMap.get(_key);
 					Map<Object, DoubleSummaryStatistics> utToVal = null;
 
 					utToVal = _dps.stream().parallel().collect(Collectors.groupingBy(dp-> {
@@ -199,7 +199,7 @@ public class TaggedTS {
 						.collect(Collectors.toList());
 						break;
 					}
-					BeringeiQSResponse _resp = new BeringeiQSResponse(_key,  q.getTopoQuery(), dpsByKey);
+					TSParkQSResponse _resp = new TSParkQSResponse(_key,  q.getTopoQuery(), dpsByKey);
 					resp.add(_resp);
 				}
 			});
@@ -216,12 +216,12 @@ public class TaggedTS {
 	}
 
 	//executes one m parameter
-	CompletableFuture<List<BeringeiQSResponse>> getData(long start,
+	CompletableFuture<List<TSParkQSResponse>> getData(long start,
 			long end,
 			TSKey ts) {
 		logger.info("getData working on query " + ts.topoString());
-		CompletableFuture<List<BeringeiQSResponse>> retDPSCF = new CompletableFuture<List<BeringeiQSResponse>>();
-		Map<String, BeringeiWrappedQuery> beringeiQIMap = new ConcurrentHashMap<String, BeringeiWrappedQuery>();
+		CompletableFuture<List<TSParkQSResponse>> retDPSCF = new CompletableFuture<List<TSParkQSResponse>>();
+		Map<String, TSParkQueryInput> beringeiQIMap = new ConcurrentHashMap<String, TSParkQueryInput>();
 
 		// ExecutorService pool = Executors.newFixedThreadPool(2);
 		// TODO need further optimization
@@ -288,7 +288,7 @@ public class TaggedTS {
 				keys.add(key);
 
 				Aggregators agg = tsKey.getAggregator();
-				BeringeiWrappedQuery bwq = new BeringeiWrappedQuery(key, tActual, agg, tsKey);
+				TSParkQueryInput bwq = new TSParkQueryInput(key, tActual, agg, tsKey);
 				beringeiQIMap.put(key.key, bwq);
 				logger.debug("inquery:"+((TSKey)tsKeyObj).hash()+", key:"+ key);
 			}
@@ -306,7 +306,7 @@ public class TaggedTS {
 			.filter(_dps->_dps != null && _dps.size() > 0)
 			.forEach(_dps->dps.addAll(_dps));
 
-			CompletableFuture <List<BeringeiQSResponse>> responsesCF = rollUpAggregation(dps, beringeiQIMap);
+			CompletableFuture <List<TSParkQSResponse>> responsesCF = rollUpAggregation(dps, beringeiQIMap);
 			responsesCF.thenAccept(responses->retDPSCF.complete(responses));
 		});
 

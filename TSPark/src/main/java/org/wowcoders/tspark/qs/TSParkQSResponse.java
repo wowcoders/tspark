@@ -5,12 +5,12 @@ import java.util.List;
 import org.wowcoders.tspark.models.TSKey;
 import org.wowcoders.tspark.utils.Pair;
 
-public class BeringeiQSResponse {
+public class TSParkQSResponse {
 		String key;
 		TSKey meta;
 		List<Pair<Long, Double>> dps;
 
-		public BeringeiQSResponse(String key, TSKey meta, List<Pair<Long, Double>> dps) {
+		public TSParkQSResponse(String key, TSKey meta, List<Pair<Long, Double>> dps) {
 			this.key = key;
 			this.meta = meta;
 			this.dps = dps;

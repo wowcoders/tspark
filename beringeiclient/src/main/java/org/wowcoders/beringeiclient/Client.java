@@ -6,7 +6,7 @@ import java.util.concurrent.Executors;
 
 import org.wowcoders.beringeiclient.utils.Pair;
 
-import com.facebook.thrift.transport.TTransportException;
+import  org.apache.thrift.transport.TTransportException;
 
 public class Client {
 	/*TODO create BeringeiClient builder to add configurations*/

@@ -23,6 +23,7 @@ public class BeringeiTestClient {
 	static BeringeiClient client = null;
 
 	public static void main(String [] args) throws InterruptedException {
+		org.wowcoders.beringeiclient.configurations.Configuration.init(null);
 		Configuration.loadConfig();
 		try {
 			client = new BeringeiClient();
