@@ -111,7 +111,7 @@ public class BeringeiTestClient {
 		key.key = keyT;
 		key.shardId = 2;
 		keys.add(key);
-		CompletableFuture<Map<Key, List<DataPoint>>> dpsCF = client.getDataPoints(sec-60, sec, keys);
+		CompletableFuture<Map<Key, List<DataPoint>>> dpsCF = client.getDataPointsByKey(sec-60, sec, keys);
 		dpsCF.thenAccept(dps -> {
 			System.out.println(dps);
 		});

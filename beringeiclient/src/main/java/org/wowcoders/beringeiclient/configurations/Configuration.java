@@ -154,7 +154,6 @@ public class Configuration {
 		long timeoutToCloseIdleConnection = 40000;
 		
 		int connectionCountPerShards = 2;
-		int ayncCallsPerConnections = 1;
 		
 		int shardCounts = 100;
 		
@@ -174,7 +173,6 @@ public class Configuration {
 			idleConnectionsPerShards = Integer.parseInt(prop.getProperty("clients.active-idle-connections-per-shards"));
 			timeoutToCloseIdleConnection = Long.parseLong(prop.getProperty("clients.timeout-to-close-idle-connections-in-seconds"));
 			connectionCountPerShards = Integer.parseInt(prop.getProperty("clients.connection-count-per-shards"));
-			ayncCallsPerConnections = Integer.parseInt(prop.getProperty("clients.count-of-async-operations-allowed-per-connection"));
 			
 			shardCounts = Integer.parseInt(prop.getProperty("clients.cluster-shards-count", "100"));
 			datacenters = prop.getProperty("clients.datacenters", "").split(",");
@@ -209,8 +207,7 @@ public class Configuration {
 		
 			sb.append("idleConnectionsPerShards:"+idleConnectionsPerShards).append("; ")
 			.append("timeoutToCloseIdleConnection:"+timeoutToCloseIdleConnection).append("; ")
-			.append("connectionCountPerShards:"+connectionCountPerShards).append("; ")
-			.append("ayncCallsPerConnections:"+ayncCallsPerConnections).append("; ");
+			.append("connectionCountPerShards:"+connectionCountPerShards).append("; ");
 			
 			sb.append("shardCnt:"+shardCounts).append("; ")
 			.append("datacenters:"+Arrays.toString(datacenters)).append("; ");
@@ -265,15 +262,7 @@ public class Configuration {
 		public void setConnectionCountPerShards(int connectionCountPerShards) {
 			this.connectionCountPerShards = connectionCountPerShards;
 		}
-
-		public int getAyncCallsPerConnections() {
-			return ayncCallsPerConnections;
-		}
-
-		public void setAyncCallsPerConnections(int ayncCallsPerConnections) {
-			this.ayncCallsPerConnections = ayncCallsPerConnections;
-		}
-
+		
 		public int getShardCounts() {
 			return shardCounts;
 		}

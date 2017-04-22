@@ -1,8 +1,5 @@
 package org.wowcoders.tspark.qs;
 
-import java.io.FileInputStream;
-import java.text.ParseException;
-import java.util.Properties;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -107,7 +104,7 @@ public class Server {
 		new Thread() {// second metric emitter
 			public void run() {
 				while(true) {
-					int hosts = 5;
+					int hosts = 10;
 
 					long ms = System.currentTimeMillis() / 1000;
 

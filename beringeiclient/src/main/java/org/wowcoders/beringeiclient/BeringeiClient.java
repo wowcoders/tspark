@@ -14,7 +14,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.apache.thrift.transport.TTransportException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.wowcoders.beringei.compression.BlockDecoder;
@@ -31,13 +30,19 @@ import com.facebook.beringei.thriftclient.StatusCode;
 import com.facebook.beringei.thriftclient.TimeSeriesBlock;
 import com.facebook.beringei.thriftclient.TimeSeriesData;
 import com.facebook.beringei.thriftclient.TimeValuePair;
-import com.facebook.beringei.thriftclient.BeringeiService.Client;
+import com.facebook.beringei.thriftclient.BeringeiService;
+import com.facebook.beringei.thriftclient.BeringeiService.AsyncClient;
+import com.facebook.beringei.thriftclient.BeringeiService.AsyncClient.Factory;
 
 import org.apache.thrift.TException;
+import org.apache.thrift.async.AsyncMethodCallback;
+import org.apache.thrift.async.TAsyncClientManager;
 import org.apache.thrift.protocol.TBinaryProtocol;
 import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.transport.TFramedTransport;
-import org.apache.thrift.transport.TSocket;
+import org.apache.thrift.protocol.TProtocolFactory;
+import org.apache.thrift.transport.TNonblockingSocket;
+import org.apache.thrift.transport.TTransport;
+import org.apache.thrift.transport.TTransportException;
 
 import cn.danielw.fop.ObjectFactory;
 import cn.danielw.fop.ObjectPool;
@@ -59,48 +64,61 @@ public class BeringeiClient {
 	static ExecutorService executorReader = Executors.newFixedThreadPool(executerReaderThreads);
 	static ExecutorService executorWriter = Executors.newFixedThreadPool(executerWriterThreads);
 
-	//Map<Long, List<Client>> clusterByShards = new ConcurrentHashMap<Long, List<Client>>();
-	//Map<Long, List<DataPoint>> batchByShards = new ConcurrentHashMap<Long, List<DataPoint>>();
-	Map<Long, List<ObjectPool<Client>>> clusterByShards = new ConcurrentHashMap<Long, List<ObjectPool<Client>>>();
+	Map<Long, List<ObjectPool<AsyncClient>>> clusterByShards = new ConcurrentHashMap<Long, List<ObjectPool<AsyncClient>>>();
 	Map<Long, List<DataPoint>> batchByShards = new ConcurrentHashMap<Long, List<DataPoint>>();
-	
-	private ObjectFactory<Client> createObjectFactory(Pair<String, Integer> addr) {
-		ObjectFactory<Client> factory = new ObjectFactory<Client>() {
-			@Override public Client create() {
+
+	static TProtocolFactory proto_fac = new TProtocolFactory() {
+		private static final long serialVersionUID = 1L;
+
+		@Override
+		public TProtocol getProtocol(TTransport trans) {
+			return new TBinaryProtocol(trans);
+		}
+	};
+
+	private ObjectFactory<AsyncClient> createObjectFactory(Pair<String, Integer> addr) {
+		ObjectFactory<AsyncClient> factory = new ObjectFactory<AsyncClient>() {
+			TAsyncClientManager asm = null;
+			TNonblockingSocket tnbs = null;
+			@Override public AsyncClient create() {
 				Configuration cfg = Configuration.getInstnace();
-
-				TSocket socket = new TSocket(addr.first, addr.second);
-
-				socket.setTimeout((int)(cfg.getClientConfig().getConnectTimeout() 
-						+ cfg.getClientConfig().getWriteTimeout()
-						+ cfg.getClientConfig().getReadTimeout()));
-				
-
 				try {
-					socket.open();
-				} catch (TTransportException e) {
+					asm = new TAsyncClientManager();
+				} catch (IOException e) {
 					e.printStackTrace();
 				}
-				TProtocol protocol = new TBinaryProtocol(new TFramedTransport(socket));
-				Client client = new Client(protocol);
-				return client;
-			}
-			@Override public void destroy(Client o) {
+
+				Factory fac = new AsyncClient.Factory(asm, proto_fac);
 				try {
-					o.getInputProtocol().getTransport().close();
-					o.getOutputProtocol().getTransport().close();
+					tnbs = new TNonblockingSocket(addr.first, addr.second);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				tnbs.setTimeout((int)(cfg.getClientConfig().getConnectTimeout() 
+						+ cfg.getClientConfig().getWriteTimeout()
+						+ cfg.getClientConfig().getReadTimeout()));
+
+				return fac.getAsyncClient(tnbs);
+			}
+			@Override public void destroy(AsyncClient o) {
+				try {
+					asm.stop();
+					tnbs.close();
 				} catch(Exception e) {
 
+				} finally {
+					asm = null;
+					tnbs = null;
 				}
 			}
-			@Override public boolean validate(Client o) {
-				return o.getInputProtocol().getTransport().isOpen() && o.getOutputProtocol().getTransport().isOpen();
+			@Override public boolean validate(AsyncClient o) {
+				return asm != null && tnbs != null;
 			}
 		};
 
 		return factory;
 	}
-	
+
 	@SuppressWarnings("serial")
 	public BeringeiClient() throws IOException {
 		Configuration cfg = Configuration.getInstnace();
@@ -137,9 +155,9 @@ public class BeringeiClient {
 		while(it.hasNext()) {
 			Pair<String, Integer> hostAddr = it.next();
 			// System.out.println("hostaddr"+hostAddr.first);
-			ObjectPool<Client> cliPool = new ObjectPool<Client>(config, createObjectFactory(hostAddr));
+			ObjectPool<AsyncClient> cliPool = new ObjectPool<AsyncClient>(config, createObjectFactory(hostAddr));
 			for(long i = startShard; i < shardCount; i++) {
-				clusterByShards.put(i, new ArrayList<ObjectPool<Client>>() {{
+				clusterByShards.put(i, new ArrayList<ObjectPool<AsyncClient>>() {{
 					add(cliPool);
 				}});
 				batchByShards.put(i, new ArrayList<DataPoint>());
@@ -207,8 +225,8 @@ public class BeringeiClient {
 			flush();
 		}
 	}
-	
-	
+
+
 	public CompletableFuture<List <DataPoint>> putDataPoints(List <DataPoint> dps) {
 		CompletableFuture<List <DataPoint>> completableFuture =  new CompletableFuture<List <DataPoint>>();
 		executorWriter.submit(() -> {
@@ -217,153 +235,164 @@ public class BeringeiClient {
 
 			long shardId = dps.get(0).getKey().getShardId();
 
-			List<ObjectPool<Client>> cliList = clusterByShards.get(shardId);
-			PutDataResult  res = null;
-			int saved = 0;
-			for(ObjectPool<Client>  pool: cliList) {
-				int ntry = 1;
-				while (ntry < 3) {
-					ntry++;
-					Poolable<Client> obj = null;
-					try {
-						obj = pool.borrowObject(true);
-						Client client = obj.getObject();
-						if (!client.getOutputProtocol().getTransport().isOpen()) {
-							client.getOutputProtocol().getTransport().open();
-						}
-						res = client.putDataPoints(req);
-						saved++;
-						break;
-					} catch (TException e) {
-						try {
-							Thread.sleep(1000);
-						} catch (InterruptedException e1) {
-						}
-						try {
-							Client client = obj.getObject();
-							client.getInputProtocol().getTransport().close();
-							client.getOutputProtocol().getTransport().close();
-						} catch(Exception e1) {
+			List<ObjectPool<AsyncClient>> cliList = clusterByShards.get(shardId);
 
-						}
-					} finally {
-						if(null != obj) {
-							pool.returnObject(obj);
-						}
-					}
-				}
+			ObjectPool<AsyncClient> pool = cliList.get(0);
+			Poolable<AsyncClient> obj = pool.borrowObject(true);
+			AsyncClient client = obj.getObject();
 
-				if (ntry == 3) {
-					logger.error("Put Exception, Shard Id" + dps.get(0).getKey().shardId + ", " + saved);
-				}
-			}
-
-			if (saved > 0) {
-				completableFuture.complete(res.getData());
-			} else {
-				completableFuture.completeExceptionally(null); //TODO ?
-			}
+			CompletableFuture<List <DataPoint>> _completableFuture = new CompletableFuture<List <DataPoint>>();
+			PutDataPointsRequestResponseHandler pdprrh = new PutDataPointsRequestResponseHandler(req, _completableFuture);
+			_completableFuture.thenAccept(rdps->{
+				completableFuture.complete(rdps);
+				pool.returnObject(obj);
+			});
+			pdprrh.on(client);
 		});
 		return completableFuture;
 	}
 
+	class PutDataPointsRequestResponseHandler  {
+		PutDataRequest req;
+		CompletableFuture<List <DataPoint>> cf;
+		PutDataPointsRequestResponseHandler(PutDataRequest req, CompletableFuture<List <DataPoint>> cf) {
+			this.req = req;
+			this.cf = cf;
+		}
 
-	public CompletableFuture<Map<Key, List <DataPoint>>> getDataPoints(long start, long end, List <Key> keys) {
-		CompletableFuture<Map<Key, List <DataPoint>>> completableFuture =  new CompletableFuture<Map<Key, List <DataPoint>>>();
-		executorReader.submit(() -> {
-			GetDataRequest req = new GetDataRequest();
-
-			req.setBegin(start);
-			req.setEnd(end);
-			req.setKeys(keys);
-
-			long shardId = keys.get(0).getShardId();
-
-			List<ObjectPool<Client>> cliList = clusterByShards.get(shardId);
-			ObjectPool<Client> pool = cliList.get(0);
-			int ntry = 1;
-
-			while (ntry < 3) {
-				ntry ++;
-				Poolable<Client> obj = null;
-				try {
-					obj = pool.borrowObject(true);
-					Client client = obj.getObject();
-					if (!client.getInputProtocol().getTransport().isOpen()) {
-						client.getInputProtocol().getTransport().open();
-					}
-					GetDataResult result = client.getData(req);
-
-					Map<Key, List <DataPoint>> map = new HashMap<Key, List <DataPoint>>();
-
-					List<TimeSeriesData> lts = result.getResults();
-					int idx = 0;
-					for(TimeSeriesData ts: lts) {
-						Key key = keys.get(idx);
-						if (ts.status == StatusCode.OK) {
-							List<TimeSeriesBlock> ltsb = ts.getData();
-							List <DataPoint> dps  = new ArrayList<DataPoint>();
-							for(TimeSeriesBlock tsb: ltsb) {
-								BlockDecoder bd = new BlockDecoder(key, tsb);
-								List <DataPoint> _dps = bd.readDps();
-								dps.addAll(_dps);
-							}
-							map.put(key, dps);
-						}
-						idx++;
-					}
-					completableFuture.complete(map);
-				} catch (TException e) {
-					if (ntry == 3) {
+		public void on(AsyncClient cli) {
+			try {
+				((BeringeiService.AsyncClient)cli).putDataPoints(req,  new AsyncMethodCallback<PutDataResult>() {
+					@Override
+					public void onError(Exception e) {
 						e.printStackTrace();
-						completableFuture.complete(null);
+						//taskDone();
 					}
-					try {
-						Client client = obj.getObject();
-						client.getInputProtocol().getTransport().close();
-						client.getOutputProtocol().getTransport().close();
-					} catch(Exception e1) {
 
+					@Override
+					public void onComplete(PutDataResult result) {
+						cf.complete(result.getData());
+						//taskDone();
 					}
-				} finally {
-					if(null != obj) {
-						pool.returnObject(obj);
-					}
-				}
+				});
+			} catch (Exception e) {
+				e.printStackTrace();
 			}
-		});
+		}
+	}
+
+	private CompletableFuture<List<TimeSeriesData>> getData(AsyncClient client, long start, long end, List <Key> keys) {
+		CompletableFuture<List<TimeSeriesData>> completableFuture =  new CompletableFuture<List<TimeSeriesData>>();
+
+		GetDataRequest req = new GetDataRequest();
+
+		req.setBegin(start);
+		req.setEnd(end);
+		req.setKeys(keys);
+
+		GetDataPointsRequestResponseHandler gdprrh = new GetDataPointsRequestResponseHandler(req, completableFuture);
+		gdprrh.on(client);
+		// client.req(new GetDataPointsRequestResponseHandler(req, completableFuture));
+
 		return completableFuture;
 	}
-	
-	public CompletableFuture<List <DataPoint>> getDataPointsV2(long start, long end, List <Key> keys) {
-		CompletableFuture<List<DataPoint>> completableFuture =  new CompletableFuture<List <DataPoint>>();
-		executorReader.submit(() -> {
-			GetDataRequest req = new GetDataRequest();
 
-			req.setBegin(start);
-			req.setEnd(end);
-			req.setKeys(keys);
+	class GetDataPointsRequestResponseHandler {
+		GetDataRequest req;
+		CompletableFuture<List<TimeSeriesData>> cf;
+		GetDataPointsRequestResponseHandler(GetDataRequest req, CompletableFuture<List<TimeSeriesData>> cf) {
+			this.req = req;
+			this.cf = cf;
+		}
 
-			long shardId = keys.get(0).getShardId();
-
-			List<ObjectPool<Client>> cliList = clusterByShards.get(shardId);
-			ObjectPool<Client> pool = cliList.get(0);
-			int ntry = 1;
-
-			while (ntry < 3) {
-				ntry ++;
-				Poolable<Client> obj = null;
-				try {
-					obj = pool.borrowObject(true);
-					Client client = obj.getObject();
-					if (!client.getInputProtocol().getTransport().isOpen()) {
-						client.getInputProtocol().getTransport().open();
+		public void on(AsyncClient cli) {
+			try {
+				((BeringeiService.AsyncClient)cli).getData(req,  new AsyncMethodCallback<GetDataResult>() {
+					@Override
+					public void onError(Exception e) {
+						e.printStackTrace();
+						//taskDone();
+						cf.completeExceptionally(e);
 					}
-					GetDataResult result = client.getData(req);
 
+					@Override
+					public void onComplete(GetDataResult result) {
+						cf.complete(result.getResults());
+					}
+				});
+			} catch (TException e) {
+				e.printStackTrace();
+			}
+		}
+	}
+
+	public CompletableFuture<Map<Key, List <DataPoint>>> getDataPointsByKey(long start, long end, List <Key> keys) {
+		CompletableFuture<Map<Key, List <DataPoint>>> completableFuture =  new CompletableFuture<Map<Key, List <DataPoint>>>();
+		long shardId = keys.get(0).getShardId();
+
+		List<ObjectPool<AsyncClient>> cliList = clusterByShards.get(shardId);
+		ObjectPool<AsyncClient> pool = cliList.get(0);
+
+		Poolable<AsyncClient> obj = pool.borrowObject(true);
+		AsyncClient client = obj.getObject();
+
+		CompletableFuture<List<TimeSeriesData>> cf = getData(client, start, end, keys);
+		cf.thenAccept(lts -> {
+			pool.returnObject(obj);
+			executorReader.submit(() -> {;
+			if (lts == null) {
+
+			} else {
+
+				Map<Key, List <DataPoint>> map = new HashMap<Key, List <DataPoint>>();
+
+				int idx = 0;
+				for(TimeSeriesData ts: lts) {
+					Key key = keys.get(idx);
+					if (ts.status == StatusCode.OK) {
+						List<TimeSeriesBlock> ltsb = ts.getData();
+						List <DataPoint> dps  = new ArrayList<DataPoint>();
+						for(TimeSeriesBlock tsb: ltsb) {
+							BlockDecoder bd = new BlockDecoder(key, tsb);
+							List <DataPoint> _dps = bd.readDps();
+							dps.addAll(_dps);
+						}
+						map.put(key, dps);
+					}
+					idx++;
+				}
+				completableFuture.complete(map);
+			}
+
+			});
+		}).exceptionally(tw-> {
+			tw.printStackTrace();
+			completableFuture.completeExceptionally(tw);
+			return null;
+		});
+
+		return completableFuture;
+	}
+
+	public CompletableFuture<List <DataPoint>> getDataPoints(long start, long end, List <Key> keys) {
+		CompletableFuture<List<DataPoint>> completableFuture =  new CompletableFuture<List <DataPoint>>();
+
+		long shardId = keys.get(0).getShardId();
+
+		List<ObjectPool<AsyncClient>> cliList = clusterByShards.get(shardId);
+		ObjectPool<AsyncClient> pool = cliList.get(0);
+
+		Poolable<AsyncClient> obj = cliList.get(0).borrowObject(true);
+		AsyncClient client = obj.getObject();
+		CompletableFuture<List<TimeSeriesData>> cf = getData(client, start, end, keys);
+		cf.thenAccept(lts -> {
+			pool.returnObject(obj);
+			if (lts == null) {
+
+			} else {
+				executorReader.submit(() -> {
 					List <DataPoint> dpsall = new ArrayList <DataPoint>();
 
-					List<TimeSeriesData> lts = result.getResults();
 					int idx = 0;
 					for(TimeSeriesData ts: lts) {
 						Key key = keys.get(idx);
@@ -380,24 +409,11 @@ public class BeringeiClient {
 						idx++;
 					}
 					completableFuture.complete(dpsall);
-				} catch (TException e) {
-					if (ntry == 3) {
-						e.printStackTrace();
-						completableFuture.complete(null);
-					}
-					try {
-						Client client = obj.getObject();
-						client.getInputProtocol().getTransport().close();
-						client.getOutputProtocol().getTransport().close();
-					} catch(Exception e1) {
-
-					}
-				} finally {
-					if(null != obj) {
-						pool.returnObject(obj);
-					}
-				}
+				});
 			}
+		}).exceptionally(tw-> {
+			completableFuture.completeExceptionally(tw);
+			return null;
 		});
 		return completableFuture;
 	}

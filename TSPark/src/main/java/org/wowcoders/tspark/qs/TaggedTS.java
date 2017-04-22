@@ -58,12 +58,12 @@ public class TaggedTS {
 			logger.info("key to find the row keys based on filters/tags given ->"+lkey);
 			Collection<Object> rowkeys = AtomixDistributedStore.map3.get(lkey).join();
 			rowkeys.iterator().forEachRemaining(o -> {
-				logger.info("found row key: " + o);
+				logger.debug("found row key: " + o);
 			});
 			logger.info("number of row keys found: "+rowkeys.size());
 
 			long _end = TimeUnit.NANOSECONDS.toMicros(System.nanoTime());
-			logger.info("time taken to retch row keys:" + (_end - _start) + "micros");
+			logger.info("time taken to fetch row keys:" + (_end - _start) + "micros");
 
 			return rowkeys;
 		}
@@ -73,7 +73,7 @@ public class TaggedTS {
 		CompletableFuture<List<DataPoint>> cfs = new CompletableFuture<List<DataPoint>>();
 		List<DataPoint> dps = new ArrayList<DataPoint>();
 		long _start = TimeUnit.NANOSECONDS.toMicros(System.nanoTime());
-		client.getDataPoints(start, end, keys).thenAccept(result -> {
+		client.getDataPointsByKey(start, end, keys).thenAccept(result -> {
 			if (result != null) {
 				result.entrySet().stream().forEach(_pair -> {
 					Entry<Key,  List<DataPoint>> pair = _pair;
