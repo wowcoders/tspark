@@ -9,6 +9,7 @@
 	<modules>
 		<module>TSPark</module>
 		<module>beringeiclient</module>
+		<module>dist</module>
 	</modules>
 
 	<build>
@@ -20,19 +21,6 @@
 				<configuration>
 					<source>1.8</source>
 					<target>1.8</target>
-				</configuration>
-			</plugin>
-			<plugin>
-				<artifactId>maven-assembly-plugin</artifactId>
-				<configuration>
-					<archive>
-						<manifest>
-							<mainClass>org.wowcoders.beringeiclient.qs.Server</mainClass>
-						</manifest>
-					</archive>
-					<descriptorRefs>
-						<descriptorRef>jar-with-dependencies</descriptorRef>
-					</descriptorRefs>
 				</configuration>
 			</plugin>
 		</plugins>
