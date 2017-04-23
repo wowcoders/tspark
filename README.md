@@ -9,7 +9,10 @@ TimeSeries Java client for Facebook Beringei. It also includes query service wit
 
 ## Building the Beringei Java Client
 	mvn clean package
-	mvn clean package assembly:single (fat jar)
+### This creates the following jar files
+	beringeiclient/target/beringeiclient-0.0.1-SNAPSHOT.jar
+	TSPark/target/TSPark-0.0.1-SNAPSHOT.jar
+	dist/target/TSPark-jar-with-dependencies.jar (fat jar)
 
 ## Samples
     Send & Retrieve metrics data using Java Client
