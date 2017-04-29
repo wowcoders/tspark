@@ -3,6 +3,7 @@ package org.wowcoders.tspark.qs;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.DoubleSummaryStatistics;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -27,11 +29,11 @@ import com.facebook.beringei.thriftclient.Key;
 public class TaggedTS {
 	final static Logger logger = LoggerFactory.getLogger(TaggedTS.class);
 	BeringeiClient client = null;
-	
+
 	TaggedTS(BeringeiClient client) {
 		this.client = client;
 	}
-	
+
 	Collection<Object> getKeys(TSKey ts) {
 		//form the return object with required keys for aggregation
 		Topo topo = (Topo)ts;
@@ -95,6 +97,55 @@ public class TaggedTS {
 		return cfs;
 	}
 
+	Comparator<Pair<Long, Double>> dpsCompartor = (o1, o2) -> {
+		if (o1.second > o2.second) {
+			return 1;
+		} else if (o1.second < o2.second) {
+			return -1;
+		} else {
+			return 0;
+		}
+	};
+
+	public static class AggregationMapper {
+		private static Function<Entry<Object, DoubleSummaryStatistics>, Pair<Long, Double>> CNT = (e) -> {
+			return new Pair<Long, Double>((Long)e.getKey(), (double)e.getValue().getCount());
+		};
+
+		private static Function<Entry<Object, DoubleSummaryStatistics>, Pair<Long, Double>> SUM = (e) -> {
+			return new Pair<Long, Double>((Long)e.getKey(), e.getValue().getSum());
+		};
+
+		private static Function<Entry<Object, DoubleSummaryStatistics>, Pair<Long, Double>> AVG = (e) -> {
+			return new Pair<Long, Double>((Long)e.getKey(), e.getValue().getAverage());
+		};
+
+		private static Function<Entry<Object, DoubleSummaryStatistics>, Pair<Long, Double>> MAX = (e) -> {
+			return new Pair<Long, Double>((Long)e.getKey(), e.getValue().getMax());
+		};
+
+		private static Function<Entry<Object, DoubleSummaryStatistics>, Pair<Long, Double>> MIN = (e) -> {
+			return new Pair<Long, Double>((Long)e.getKey(), e.getValue().getMin());
+		};
+
+		public static Function<Entry<Object, DoubleSummaryStatistics>, Pair<Long, Double>> getMapper(Aggregators a) {
+			switch(a) {
+			case CNT:
+				return AggregationMapper.CNT;
+			case SUM:
+				return AggregationMapper.SUM;
+			case AVG:
+				return AggregationMapper.AVG;
+			case MAX:
+				return AggregationMapper.MAX;
+			case MIN:
+				return AggregationMapper.MIN;
+			}
+
+			return AggregationMapper.CNT;
+		}
+	}
+
 	public CompletableFuture <List<TSParkQSResponse>> rollUpAggregation(List<DataPoint> result, Map<String, TSParkQueryInput> inputMap) {
 		// ExecutorService pool = Executors.newFixedThreadPool(2);
 		CompletableFuture<List<TSParkQSResponse>> cfs = new CompletableFuture<List<TSParkQSResponse>>();
@@ -125,80 +176,12 @@ public class TaggedTS {
 
 					List<Pair<Long, Double>> dpsByKey = null;
 
-					switch(q.getAgg()) {
-					case SUM:
-						dpsByKey = utToVal.entrySet().stream()
-						.parallel()
-						.map(_e -> new Pair<Long, Double>((Long)_e.getKey(), _e.getValue().getSum()))
-						.sorted((u1, u2) -> {
-							if (u1.second > u2.second) {
-								return 1;
-							} else if (u1.second < u2.second) {
-								return -1;
-							} else {
-								return 0;
-							}
-						})
-						.collect(Collectors.toList());
-						break;
-					case CNT:
-						dpsByKey = utToVal.entrySet().stream()
-						.parallel()
-						.map(_e -> new Pair<Long, Double>((Long)_e.getKey(), (double)_e.getValue().getCount()))
-						.sorted((u1, u2) -> {
-							if (u1.second > u2.second) {
-								return 1;
-							} else if (u1.second < u2.second) {
-								return -1;
-							} else {
-								return 0;
-							}
-						})
-						.collect(Collectors.toList());
-					case AVG:
-						dpsByKey = utToVal.entrySet().stream()
-						.parallel()
-						.map(_e -> new Pair<Long, Double>((Long)_e.getKey(), (double)_e.getValue().getAverage()))
-						.sorted((u1, u2) -> {
-							if (u1.second > u2.second) {
-								return 1;
-							} else if (u1.second < u2.second) {
-								return -1;
-							} else {
-								return 0;
-							}
-						})
-						.collect(Collectors.toList());
-					case MAX:
-						dpsByKey = utToVal.entrySet().stream()
-						.parallel()
-						.map(_e -> new Pair<Long, Double>((Long)_e.getKey(), _e.getValue().getMin()))
-						.sorted((u1, u2) -> {
-							if (u1.second > u2.second) {
-								return 1;
-							} else if (u1.second < u2.second) {
-								return -1;
-							} else {
-								return 0;
-							}
-						})
-						.collect(Collectors.toList());
-					case MIN:
-						dpsByKey = utToVal.entrySet().stream()
-						.parallel()
-						.map(_e -> new Pair<Long, Double>((Long)_e.getKey(), _e.getValue().getMax()))
-						.sorted((u1, u2) -> {
-							if (u1.second > u2.second) {
-								return 1;
-							} else if (u1.second < u2.second) {
-								return -1;
-							} else {
-								return 0;
-							}
-						})
-						.collect(Collectors.toList());
-						break;
-					}
+					dpsByKey = utToVal.entrySet().stream()
+							.parallel()
+							.map(AggregationMapper.getMapper(q.getAgg()))
+							.sorted(dpsCompartor)
+							.collect(Collectors.toList());
+
 					TSParkQSResponse _resp = new TSParkQSResponse(_key,  q.getTopoQuery(), dpsByKey);
 					resp.add(_resp);
 				}
@@ -241,7 +224,7 @@ public class TaggedTS {
 		Map<Long, List<Object[]>> groupTSKey = new ConcurrentHashMap<Long, List<Object[]>>();
 		newList.stream().forEach(obj-> {
 			String fullTopoKey = (String)obj[0];
-			
+
 			long hashCode = fullTopoKey.hashCode();
 			long shardId =  BigInteger.valueOf(hashCode).mod(BigInteger.valueOf(client.getShardCount())).intValue();
 			List<Object[]> byShardId = groupTSKey.get(shardId);
@@ -250,7 +233,7 @@ public class TaggedTS {
 				groupTSKey.put(shardId, byShardId);
 			}
 			byShardId.add(obj);
-			
+
 			/*a TOPO will get multiple shardIds if we add more hosts/shards into cache cluster */
 			Collection<Object> shardIds = AtomixDistributedStore.topoKeyToShardIds.get(fullTopoKey).join();
 			shardIds.stream().forEach(_shardId->{
@@ -273,12 +256,12 @@ public class TaggedTS {
 			for(Object[] obj: tsArrGrouped.getValue()) {
 				Object tsKeyObj = obj[1];
 				Key key = new Key();
-				
+
 				TSKey tsKey = (TSKey)tsKeyObj;
 
 				String keyByTopo = (String) obj[0];
 				Topo tActual = (Topo) AtomixDistributedStore.topoMap.get(keyByTopo).join();
-				
+
 				//TODO try to use if preaggregation avg,min,max,sum available tsKey.metricAggHash() or find out the standard way of doing this, right now we use cnt to calculate sum,avg,min,max
 				String aggAvailableInDB = "cnt";
 				String calcAggMetricHash = TSKey.calcAggMetricHash(aggAvailableInDB, tsKey.getMetric());

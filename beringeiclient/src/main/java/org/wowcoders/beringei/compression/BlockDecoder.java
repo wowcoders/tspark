@@ -9,10 +9,24 @@ import com.facebook.beringei.thriftclient.Key;
 import com.facebook.beringei.thriftclient.TimeSeriesBlock;
 import com.facebook.beringei.thriftclient.TimeValuePair;
 
+/**
+ * 
+ * @author vmukumar
+ * 
+ */
+
+/*Reference: https://raw.githubusercontent.com/facebookincubator/beringei/f1023333b6189e766b4ff7dbfa7d684176fa7083/beringei/lib/TimeSeriesStream.cpp*/
+
 public class BlockDecoder {
-	static class TimestampEncodings {
+	private static final byte kBitsForFirstTimestamp = 31;
+	private static final byte kLeadingZerosLengthBits = 5;
+	private static final byte kBlockSizeLengthBits = 6;
+	
+	private static class TimestampEncodings {
 		int bitsForValue;
+		@SuppressWarnings("unused")
 		int controlValue;
+		@SuppressWarnings("unused")
 		int controlValueBitLength;
 
 		public TimestampEncodings(int bitsForValue, int controlValue, int controlValueBitLength) {
@@ -23,36 +37,45 @@ public class BlockDecoder {
 	} 
 
 	@SuppressWarnings("serial")
-	static  List<TimestampEncodings> timestampEncodings = new ArrayList<TimestampEncodings>() {{
+	private static  List<TimestampEncodings> timestampEncodings = new ArrayList<TimestampEncodings>() {{
 		add(new TimestampEncodings(7, 2, 2));
 		add(new TimestampEncodings(9, 6, 3));
 		add(new TimestampEncodings(12, 14, 4));
 		add(new TimestampEncodings(32, 15, 4));
 	}};
 
-	Key key;
-	BitStream bs;
+	private final Key key;
+	private final BitStream bs;
 	
-	int dataPoints = 0;
+	private int dataPoints = 0;
 
-	long prevTimestamp = 0;
-	long prevValue = 0;
+	private long prevTimestamp = 0;
+	private long prevValue = 0;
 
-	long defaultDelta = 60;
-	long prevDelta = defaultDelta;
+	private long defaultDelta = 60;
+	private long prevDelta = defaultDelta;
 
-	long previousTrailingZeros = 0;
-	long previousLeadingZeros = 0;
+	private long previousTrailingZeros = 0;
+	private long previousLeadingZeros = 0;
 
+	/**
+	 * 
+	 * @param key berginei key object(contains key and shard id)
+	 * @param tsb time series block for the given key
+	 */
 	public BlockDecoder(Key key, TimeSeriesBlock tsb) {
 		dataPoints = tsb.getCount();
-		byte b[]=tsb.getData();
-		ByteBuffer buffer = ByteBuffer.wrap(b);
 		
-		this.bs = new BitStream(buffer);
+		ByteBuffer buffer = tsb.bufferForData();
+		this.bs = new ByteBufferBitReader(buffer);
+
 		this.key = key;
 	}
 
+	/**
+	 * 
+	 * @return returns the timeseries from the block
+	 */
 	public List <DataPoint> readDps() {
 		List <DataPoint> dps = new ArrayList<DataPoint>();
 		for(int i = 0; i < dataPoints; i++) {
@@ -73,9 +96,13 @@ public class BlockDecoder {
 		return dps;
 	}
 
-	public long readTimeStamp() {
+	/**
+	 * 
+	 * @return timestamp in seconds
+	 */
+	private long readTimeStamp() {
 		if (prevTimestamp == 0) {
-			prevTimestamp = bs.getBits(31);
+			prevTimestamp = bs.getBits(kBitsForFirstTimestamp);
 		} else {
 			int bits = 0;
 			int limit = 4;
@@ -106,7 +133,11 @@ public class BlockDecoder {
 		return prevTimestamp;
 	}
 
-	public double readValue() {
+	/**
+	 * 
+	 * @return value in double
+	 */
+	private double readValue() {
 		long nonzero = bs.getBits(1);
 		if (nonzero != 0) {
 			long usePreviousBlockInformation = bs.getBits(1);
@@ -116,9 +147,9 @@ public class BlockDecoder {
 				xorValue = bs.getBits((int)(64 - previousLeadingZeros - previousTrailingZeros));
 				xorValue <<= previousTrailingZeros;
 			} else {
-				long leadingZeros = bs.getBits(5);
+				long leadingZeros = bs.getBits(kLeadingZerosLengthBits);
 				// System.out.println("leadingZeros" + leadingZeros);
-				int blockSize  = (int) bs.getBits(6) + 1;
+				int blockSize  = (int) bs.getBits(kBlockSizeLengthBits) + 1;
 				// System.out.println("blockSize" + blockSize);
 
 				previousTrailingZeros = 64 - blockSize - leadingZeros;
