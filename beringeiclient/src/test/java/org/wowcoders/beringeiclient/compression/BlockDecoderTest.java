@@ -94,6 +94,5 @@ public class BlockDecoderTest {
 		List<DataPoint> dps = bd.readDps();
 
 		assertEquals(54, dps.size());
-		System.out.println(dps);
 	}
 }
