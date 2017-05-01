@@ -4,6 +4,9 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.facebook.beringei.thriftclient.DataPoint;
 import com.facebook.beringei.thriftclient.Key;
 import com.facebook.beringei.thriftclient.TimeSeriesBlock;
@@ -18,10 +21,18 @@ import com.facebook.beringei.thriftclient.TimeValuePair;
 /*Reference: https://raw.githubusercontent.com/facebookincubator/beringei/f1023333b6189e766b4ff7dbfa7d684176fa7083/beringei/lib/TimeSeriesStream.cpp*/
 
 public class BlockDecoder {
+	final static Logger logger = LoggerFactory.getLogger(BlockDecoder.class);
+	
+	
+	/*TODO	1. evaluate performance between ByteBuffer and LongBuffer
+	 * 		2. optimize the bit reading.
+	 */
+	private static boolean useLongBuffer = false;
+	
 	private static final byte kBitsForFirstTimestamp = 31;
 	private static final byte kLeadingZerosLengthBits = 5;
 	private static final byte kBlockSizeLengthBits = 6;
-	
+
 	private static class TimestampEncodings {
 		int bitsForValue;
 		@SuppressWarnings("unused")
@@ -46,7 +57,7 @@ public class BlockDecoder {
 
 	private final Key key;
 	private final BitStream bs;
-	
+
 	private int dataPoints = 0;
 
 	private long prevTimestamp = 0;
@@ -65,10 +76,29 @@ public class BlockDecoder {
 	 */
 	public BlockDecoder(Key key, TimeSeriesBlock tsb) {
 		dataPoints = tsb.getCount();
-		
-		ByteBuffer buffer = tsb.bufferForData();
-		this.bs = new ByteBufferBitReader(buffer);
 
+		ByteBuffer buffer = tsb.bufferForData();
+
+		if (useLongBuffer == false) {
+			this.bs = new ByteBufferBitReader(buffer);
+		} else {
+			int total = buffer.remaining();
+			int remaining = total%8;
+	
+			if (remaining != 0) {
+				byte []remainingBytes = new byte[8];
+				int addBytes = remaining;
+				buffer.position(total-remaining);
+				for(int i = 0; i < addBytes; i++) {
+					remainingBytes[i] = buffer.get();
+				}
+				buffer.position(0);
+				ByteBuffer bb = ByteBuffer.wrap(remainingBytes);
+				this.bs = new LongBufferBitReader(buffer.asLongBuffer(), bb.getLong());
+			} else {
+				this.bs = new LongBufferBitReader(buffer.asLongBuffer());
+			}
+		}
 		this.key = key;
 	}
 
@@ -84,15 +114,17 @@ public class BlockDecoder {
 			TimeValuePair tvp = new TimeValuePair();
 			tvp.setUnixTime(ts);
 			tvp.setValue(val);
-			
+
 			DataPoint dp = new DataPoint();
 			dp.setKey(key);
 			dp.setValue(tvp);
-			
+
 			// System.out.println("**"+key.getKey()+" "+ ts+" "+val);
-			
+
 			dps.add(dp);
 		}
+		logger.info("no points: " + dps.size());
+		logger.debug("points: " + dps);
 		return dps;
 	}
 
