@@ -34,7 +34,6 @@ public class BlockDecoderTest {
 		BlockDecoder bd = new BlockDecoder(key, tsd);
 
 		List<DataPoint> dps = bd.readDps();
-
 		assertEquals(0, dps.size());
 	}
 
@@ -92,7 +91,6 @@ public class BlockDecoderTest {
 		BlockDecoder bd = new BlockDecoder(key, tsd);
 
 		List<DataPoint> dps = bd.readDps();
-
 		assertEquals(54, dps.size());
 	}
 }

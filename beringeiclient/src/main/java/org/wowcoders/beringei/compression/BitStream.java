@@ -10,7 +10,7 @@ public interface BitStream {
 	 * to read a bit
 	 * @return 
 	 */
-	public long getBit();
+	public boolean getBit();
 
 	/**
 	 * reads given number of bits and returns as long

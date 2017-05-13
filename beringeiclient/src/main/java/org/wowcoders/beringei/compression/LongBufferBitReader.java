@@ -8,6 +8,17 @@ import java.nio.LongBuffer;
  *
  */
 public class LongBufferBitReader implements BitStream {
+	public static long []masksRead = new long[64];
+	public static long []masksSet = new long[64];
+
+	static {
+		for (int i= 0; i < 64; i++) {
+			long mask = 1L << i;
+			masksRead[63-i] = mask;
+			masksSet[i] = mask;
+		}
+	}
+
 	private final LongBuffer buf;
 
 	private final long numOfBits;
@@ -49,12 +60,12 @@ public class LongBufferBitReader implements BitStream {
 	 * 
 	 * @return
 	 */
-	public long getBit() {
+	public boolean getBit() {
 		if (pos >= numOfBits)
 			throw new IllegalStateException();
 
 		int i = pos / 64;
-		int a = pos % 64 + 1;
+		int a = pos % 64;
 		++pos;
 
 		if (lastReadIdx != i) {
@@ -68,7 +79,7 @@ public class LongBufferBitReader implements BitStream {
 
 		//System.out.println(readLong);
 
-		return (readLong >> (64 - a)) & 0x1;
+		return ((readLong & masksRead[a]) != 0);
 	}
 
 	/**
@@ -88,7 +99,10 @@ public class LongBufferBitReader implements BitStream {
 
 		long r = 0;
 		for (int i = 0; i < bits; ++i) {
-			r |= (getBit() << (bits - i - 1));
+			if (getBit()) {
+				//r |= 1L << (bits - i - 1);
+				r |= masksSet[bits - i - 1];
+			}
 		}
 		return r;
 	}

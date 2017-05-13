@@ -8,6 +8,20 @@ import java.nio.ByteBuffer;
  *
  */
 public class ByteBufferBitReader implements BitStream {
+	public static int []masksRead = {
+			128,  64, 32, 16, 8, 4, 2, 1
+	};
+
+	public static long []masksSet = new long[64];
+
+	static {
+		for (int i= 0; i < 64; i++) {
+			long mask = 1L << i;
+			masksSet[i] = mask;
+		}
+	}
+
+
 	private final ByteBuffer buf;
 
 	private final long numOfBits;
@@ -33,12 +47,12 @@ public class ByteBufferBitReader implements BitStream {
 	 * 
 	 * @return
 	 */
-	public long getBit() {
+	public boolean getBit() {
 		if (pos >= numOfBits)
 			throw new IllegalStateException();
 
 		int i = pos / 8;
-		int a = pos % 8 + 1;
+		int a = pos % 8;
 		++pos;
 
 		if (lastReadIdx != i) {
@@ -46,7 +60,7 @@ public class ByteBufferBitReader implements BitStream {
 			lastReadIdx = i;
 		}
 
-		return (readByte >> (8 - a)) & 0x1;
+		return ((readByte & masksRead[a]) != 0);
 	}
 
 	/**
@@ -64,7 +78,10 @@ public class ByteBufferBitReader implements BitStream {
 
 		long r = 0;
 		for (int i = 0; i < bits; ++i) {
-			r |= (getBit() << (bits - i - 1));
+			if (getBit()) {
+				//r |= 1L << (bits - i - 1);
+				r |= masksSet[bits - i - 1];
+			}
 		}
 		return r;
 	}
